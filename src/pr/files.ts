@@ -38,6 +38,14 @@ export function isSensitive(path: string): boolean {
   );
 }
 
+/** Identifies the sensitive files in a selection; "" when there are none. */
+export const confirmationKey = (selected: Change[]) =>
+  selected
+    .map((c) => c.path)
+    .filter(isSensitive)
+    .sort()
+    .join("\n");
+
 export function describeChanges(selected: Change[]): string {
   const g = groupChanges(selected);
   const lines = ["Files changed from Maestro Deck:", ""];

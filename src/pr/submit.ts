@@ -6,7 +6,7 @@ export type Step = "checking" | "uploading" | "committing" | "branching" | "open
 
 export class SubmitError extends Error {
   constructor(
-    public readonly kind: "conflict" | "local_commit" | "too_large" | "branch_taken",
+    public readonly kind: "conflict" | "local_commit" | "too_large" | "branch_taken" | "stale",
     message: string,
     public readonly paths: string[] = [],
   ) {
@@ -28,6 +28,12 @@ export interface SubmitInput {
 }
 export interface SubmitDeps {
   api: Api;
+  /**
+   * The HEAD of the folder open now, or null when it is not this repo. The
+   * host reads files from whatever folder is open at the time of the call,
+   * so this is checked before and after reading them.
+   */
+  currentHead(): Promise<string | null>;
   /** Base64 content of a workspace file. */
   readFile(path: string): Promise<string>;
   onStep?(s: Step): void;
@@ -94,8 +100,14 @@ export async function submit(input: SubmitInput, deps: SubmitDeps): Promise<{ nu
   const { api } = deps;
   const { owner, repo } = input;
   const step = (s: Step) => deps.onStep?.(s);
+  const stillHere = async () => {
+    if ((await deps.currentHead()) !== input.head) {
+      throw new SubmitError("stale", "Your folder changed (another branch, a pull or another folder). Check the files and send again.");
+    }
+  };
 
   step("checking");
+  await stillHere();
   const targetSha = await api.branchSha(owner, repo, input.target);
   const baseTree = await api.commitTree(owner, repo, targetSha);
   try {
@@ -131,6 +143,8 @@ export async function submit(input: SubmitInput, deps: SubmitDeps): Promise<{ nu
     }
     return { path: f.path, mode, type: "blob", sha: await api.createBlob(owner, repo, b64) };
   });
+
+  await stillHere();
 
   step("committing");
   const tree = await api.createTree(owner, repo, baseTree, entries);

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { CLIENT_ID } from "../config";
 import { createApi, GitHubError } from "../github/api";
-import { describeChanges, GROUPS, groupChanges, isSensitive } from "../pr/files";
+import { confirmationKey, describeChanges, GROUPS, groupChanges, isSensitive } from "../pr/files";
 import { submit, SubmitError, type Step } from "../pr/submit";
 import { host, type Change } from "../sdk";
 import type { Credentials } from "./App";
-import { resolveState, type RepoMeta, type WsState } from "./useWorkspace";
+import { loadWorkspace, type WsState } from "./useWorkspace";
 
 const STEP_LABEL: Record<Step, string> = {
   checking: "Checking for conflicts…",
@@ -32,7 +32,8 @@ export function PrScreen({ creds, onSignOut, onAuthFailed }: Props) {
   const [message, setMessage] = useState("");
   const [title, setTitle] = useState<string | null>(null); // null: mirrors the commit message
   const [body, setBody] = useState<string | null>(null); // null: generated from the selection
-  const [confirmSensitive, setConfirmSensitive] = useState(false);
+  /** The sensitive files the QA agreed to send; any other set needs a new confirm. */
+  const [confirmed, setConfirmed] = useState("");
   const [step, setStep] = useState<Step | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -45,39 +46,28 @@ export function PrScreen({ creds, onSignOut, onAuthFailed }: Props) {
     setError((e as Error).message);
   }, []);
 
-  const loadChanges = useCallback(async () => {
-    const { files } = await host.workspace.changes();
-    setFiles(files);
-    setSelected((prev) => new Set([...prev].filter((p) => files.some((f) => f.path === p))));
-  }, []);
-
+  const generation = useRef(0);
   const load = useCallback(async () => {
+    const gen = ++generation.current;
     setError(null);
     setWs(null);
     try {
-      const info = await host.workspace.info();
-      const gh = info?.git?.github;
-      let meta: RepoMeta = null;
-      if (gh && info?.git?.head) {
-        try {
-          meta = await api.repo(gh.owner, gh.repo);
-        } catch (e) {
-          if (e instanceof GitHubError && e.kind === "not_found") meta = "not_found";
-          else throw e;
-        }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const got = await loadWorkspace({ info: host.workspace.info, changes: host.workspace.changes, api });
+        if (gen !== generation.current) return; // a newer load owns the panel
+        if (got === "moved") continue;
+        setBranches(got.branches);
+        setTarget((t) => (t && got.branches.includes(t) ? t : got.state.kind === "ready" ? got.state.defaultBranch : ""));
+        setFiles(got.files);
+        setSelected((prev) => new Set([...prev].filter((p) => got.files.some((f) => f.path === p))));
+        setWs(got.state);
+        return;
       }
-      const state = resolveState(info, meta);
-      if (state.kind === "ready") {
-        const names = await api.branches(state.owner, state.repo);
-        setBranches(names);
-        setTarget((t) => (t && names.includes(t) ? t : state.defaultBranch));
-        await loadChanges();
-      }
-      setWs(state);
+      setError("The open folder keeps changing. Wait for it to settle, then retry.");
     } catch (e) {
-      handle(e);
+      if (gen === generation.current) handle(e);
     }
-  }, [api, handle, loadChanges]);
+  }, [api, handle]);
 
   useEffect(() => {
     void load();
@@ -98,7 +88,7 @@ export function PrScreen({ creds, onSignOut, onAuthFailed }: Props) {
     message.trim() !== "" &&
     effectiveTitle.trim() !== "" &&
     target !== "" &&
-    (sensitive.length === 0 || confirmSensitive) &&
+    (sensitive.length === 0 || confirmed === confirmationKey(chosen)) &&
     step === null;
 
   const toggle = (paths: string[], on: boolean) =>
@@ -127,7 +117,15 @@ export function PrScreen({ creds, onSignOut, onAuthFailed }: Props) {
           title: effectiveTitle.trim(),
           body: effectiveBody,
         },
-        { api, readFile: async (p) => (await host.workspace.readFile(p)).base64, onStep: setStep },
+        {
+          api,
+          currentHead: async () => {
+            const g = (await host.workspace.info())?.git;
+            return g?.github?.owner === ws.owner && g.github.repo === ws.repo ? g.head : null;
+          },
+          readFile: async (p) => (await host.workspace.readFile(p)).base64,
+          onStep: setStep,
+        },
       );
       void host.ui.toast({ kind: "success", message: `Pull request #${pr.number} opened`, action: { label: "Open on GitHub", url: pr.url } });
       setDone(`#${pr.number} is open from ${pr.branch}. These files stay "modified" in your folder until you update it after the merge.`);
@@ -135,10 +133,14 @@ export function PrScreen({ creds, onSignOut, onAuthFailed }: Props) {
       setMessage("");
       setTitle(null);
       setBody(null);
-      setConfirmSensitive(false);
+      setConfirmed("");
     } catch (e) {
       if (e instanceof SubmitError && e.kind === "too_large") toggle(e.paths, false);
       handle(e);
+      if (e instanceof SubmitError && e.kind === "stale") {
+        await load();
+        setError(e.message);
+      }
     } finally {
       setStep(null);
     }
@@ -193,7 +195,7 @@ export function PrScreen({ creds, onSignOut, onAuthFailed }: Props) {
         <h1>
           {ws.owner}/{ws.repo}
         </h1>
-        <button class="link" title="Refresh changes" onClick={() => void loadChanges().catch(handle)}>
+        <button class="link" title="Refresh changes" onClick={() => void load()}>
           ↻
         </button>
       </div>
@@ -225,7 +227,7 @@ export function PrScreen({ creds, onSignOut, onAuthFailed }: Props) {
         <div class="banner stack">
           <span class="error">These look like secrets: {sensitive.map((f) => f.path).join(", ")}</span>
           <label class="inline">
-            <input type="checkbox" checked={confirmSensitive} onChange={(e) => setConfirmSensitive((e.target as HTMLInputElement).checked)} />
+            <input type="checkbox" checked={confirmed === confirmationKey(chosen)} onChange={(e) => setConfirmed((e.target as HTMLInputElement).checked ? confirmationKey(chosen) : "")} />
             Send them anyway
           </label>
         </div>

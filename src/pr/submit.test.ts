@@ -36,6 +36,8 @@ function fakeApi(trees: Record<string, Record<string, string>>, over: Partial<Ap
 const c = (path: string, status: Change["status"] = "modified", executable = false): Change => ({ path, status, size: 1, executable });
 const input = (files: Change[]) => ({ owner: "acme", repo: "app", head: "H", target: "main", files, message: "msg", title: "Fix login", body: "B" });
 const read = vi.fn(async (p: string) => `b64:${p}`);
+/** The open folder still sits on the commit the form was built from. */
+const here = async () => "H";
 
 describe("findConflicts", () => {
   it("flags files whose sha differs between head and target, including add/add and deletions", async () => {
@@ -71,6 +73,7 @@ describe("submit", () => {
     read.mockClear();
     const out = await submit(input([c("a.yaml"), c("run.sh", "added", true), c("old.txt", "deleted")]), {
       api,
+      currentHead: here,
       readFile: read,
       onStep: (s) => steps.push(s),
     });
@@ -88,13 +91,13 @@ describe("submit", () => {
 
   it("blocks on conflicts before uploading anything", async () => {
     const api = fakeApi({ H: { "a.yaml": "1" }, T: { "a.yaml": "2" } });
-    await expect(submit(input([c("a.yaml")]), { api, readFile: read })).rejects.toMatchObject({ kind: "conflict", paths: ["a.yaml"] });
+    await expect(submit(input([c("a.yaml")]), { api, currentHead: here, readFile: read })).rejects.toMatchObject({ kind: "conflict", paths: ["a.yaml"] });
     expect(api.createBlob).not.toHaveBeenCalled();
   });
 
   it("blocks when the local commit is not on GitHub", async () => {
     const api = fakeApi({ T: {} });
-    await expect(submit(input([c("a.yaml", "added")]), { api, readFile: read })).rejects.toMatchObject({ kind: "local_commit" });
+    await expect(submit(input([c("a.yaml", "added")]), { api, currentHead: here, readFile: read })).rejects.toMatchObject({ kind: "local_commit" });
   });
 
   it("stops on the first failed upload without creating a ref or PR", async () => {
@@ -106,7 +109,7 @@ describe("submit", () => {
         }),
       },
     );
-    await expect(submit(input([c("a.png", "added"), c("b.png", "added")]), { api, readFile: read })).rejects.toThrow("blob too big");
+    await expect(submit(input([c("a.png", "added"), c("b.png", "added")]), { api, currentHead: here, readFile: read })).rejects.toThrow("blob too big");
     expect(api.createTree).not.toHaveBeenCalled();
     expect(api.createRef).not.toHaveBeenCalled();
     expect(api.createPull).not.toHaveBeenCalled();
@@ -117,7 +120,7 @@ describe("submit", () => {
     const readFile = vi.fn(async () => {
       throw new HostError("too_large", "big.png is over 25 MB");
     });
-    await expect(submit(input([c("big.png", "added")]), { api, readFile })).rejects.toMatchObject({ kind: "too_large", paths: ["big.png"] });
+    await expect(submit(input([c("big.png", "added")]), { api, currentHead: here, readFile })).rejects.toMatchObject({ kind: "too_large", paths: ["big.png"] });
   });
 
   it("retries the branch name when it already exists", async () => {
@@ -126,7 +129,7 @@ describe("submit", () => {
       .mockRejectedValueOnce(new GitHubError("validation", "Validation Failed: Reference already exists", 422))
       .mockResolvedValueOnce(undefined);
     const api = fakeApi({ H: {}, T: {} }, { createRef });
-    const out = await submit(input([c("a.yaml", "added")]), { api, readFile: read });
+    const out = await submit(input([c("a.yaml", "added")]), { api, currentHead: here, readFile: read });
     expect(out.branch).toBe("qa/fix-login-2");
     expect(createRef.mock.calls.map((call) => call[2])).toEqual(["qa/fix-login", "qa/fix-login-2"]);
   });
@@ -136,7 +139,25 @@ describe("submit", () => {
       throw new GitHubError("validation", "Reference already exists", 422);
     });
     const api = fakeApi({ H: {}, T: {} }, { createRef });
-    await expect(submit(input([c("a.yaml", "added")]), { api, readFile: read })).rejects.toMatchObject({ kind: "branch_taken" });
+    await expect(submit(input([c("a.yaml", "added")]), { api, currentHead: here, readFile: read })).rejects.toMatchObject({ kind: "branch_taken" });
     expect(createRef).toHaveBeenCalledTimes(9);
+  });
+
+  it("refuses to send when the folder moved to another commit since the list was shown", async () => {
+    // Pulled or switched branch outside the app: the overwrite check would
+    // compare against a commit the files no longer come from.
+    const api = fakeApi({ H: {}, H2: {}, T: {} });
+    await expect(submit(input([c("a.yaml", "added")]), { api, currentHead: async () => "H2", readFile: read })).rejects.toMatchObject({
+      kind: "stale",
+    });
+    expect(api.createBlob).not.toHaveBeenCalled();
+  });
+
+  it("refuses to commit when the open folder changed during the upload", async () => {
+    const api = fakeApi({ H: {}, T: {} });
+    const currentHead = vi.fn().mockResolvedValueOnce("H").mockResolvedValueOnce(null);
+    await expect(submit(input([c("a.yaml", "added")]), { api, currentHead, readFile: read })).rejects.toMatchObject({ kind: "stale" });
+    expect(api.createTree).not.toHaveBeenCalled();
+    expect(api.createRef).not.toHaveBeenCalled();
   });
 });

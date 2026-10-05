@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Change } from "../sdk";
-import { branchName, describeChanges, groupChanges, groupOf, isSensitive, slugify } from "./files";
+import { branchName, confirmationKey, describeChanges, groupChanges, groupOf, isSensitive, slugify } from "./files";
 
 const c = (path: string, status: Change["status"] = "modified"): Change => ({ path, status, size: 1, executable: false });
 
@@ -21,6 +21,13 @@ describe("files", () => {
     (p) => expect(isSensitive(p)).toBe(true),
   );
   it.each(["flows/env.yaml", "keyboard.png", "monkey.yaml", "docs/credits.md"])("does not flag %s", (p) => expect(isSensitive(p)).toBe(false));
+
+  it("keys a sensitive-file confirmation to the exact set confirmed", () => {
+    // Confirming .env must not also wave through an id_rsa ticked afterwards.
+    expect(confirmationKey([c(".env"), c("a.yaml")])).toBe(confirmationKey([c("b.png"), c(".env")]));
+    expect(confirmationKey([c(".env")])).not.toBe(confirmationKey([c(".env"), c("id_rsa")]));
+    expect(confirmationKey([c("a.yaml")])).toBe("");
+  });
 
   it("describes the selection grouped, skipping empty groups", () => {
     expect(describeChanges([c("shots/home.png"), c("flows/login.yaml", "added"), c("old.txt", "deleted")])).toBe(
