@@ -22,3 +22,13 @@ button { font: inherit; cursor: pointer; }
 .error { color: hsl(var(--destructive)); font-size: 12px; margin: 0; }
 .error ul { margin: 4px 0 0; padding-left: 16px; }
 .banner { margin: 0; padding: 8px; border: 1px solid hsl(var(--border)); background: hsl(var(--accent)); }
+.group { border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: 6px 8px 8px; margin: 0; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.group legend { width: 100%; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: hsl(var(--muted-foreground)); padding: 0 4px; }
+label.file, label.inline { flex-direction: row; align-items: center; gap: 6px; text-transform: none; letter-spacing: normal; font-size: 12px; color: hsl(var(--foreground)); min-width: 0; }
+.file .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; }
+.status { font-family: ui-monospace, monospace; font-size: 11px; width: 12px; flex: none; }
+.s-added { color: hsl(142 60% 38%); }
+.s-modified { color: hsl(var(--brand)); }
+.s-deleted { color: hsl(var(--destructive)); }
+.usercode { font: 600 20px/1 ui-monospace, monospace; letter-spacing: .12em; user-select: all; }
+.footer { border-top: 1px solid hsl(var(--border)); padding-top: 8px; }
