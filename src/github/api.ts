@@ -62,6 +62,8 @@ export function createApi(token: string, fetcher: Fetcher) {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "Content-Type": "application/json",
+    // The REST API answers 403 to requests without one.
+    "User-Agent": "maestro-deck-plugin-github",
   };
 
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {

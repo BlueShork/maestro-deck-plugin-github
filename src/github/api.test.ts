@@ -18,6 +18,12 @@ describe("github api", () => {
     });
   });
 
+  it("sends a User-Agent, which the GitHub API requires (403 without one)", async () => {
+    const f = vi.fn<Fetcher>(async () => res(200, { login: "qa" }));
+    await createApi("tok", f).user();
+    expect(f.mock.calls[0][0].headers?.["User-Agent"]).toMatch(/^maestro-deck-plugin-github/);
+  });
+
   it("maps repo default branch and push permission", async () => {
     const f = vi.fn<Fetcher>(async () => res(200, { default_branch: "main", permissions: { push: false } }));
     expect(await createApi("t", f).repo("acme", "app")).toEqual({ defaultBranch: "main", canPush: false });
