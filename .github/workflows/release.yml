@@ -1,0 +1,30 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+      - name: Check manifest version matches tag
+        run: |
+          test "v$(node -p "require('./dist/manifest.json').version")" = "$GITHUB_REF_NAME"
+      - name: Zip
+        run: |
+          cd dist && zip -r -X ../plugin.zip . && cd ..
+          sha256sum plugin.zip | tee plugin.zip.sha256
+      - name: Release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          gh release create "$GITHUB_REF_NAME" plugin.zip plugin.zip.sha256 \
+            --title "$GITHUB_REF_NAME" --notes "sha256: $(cut -d' ' -f1 plugin.zip.sha256)"

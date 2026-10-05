@@ -1,0 +1,15 @@
+{
+  "id": "github",
+  "name": "GitHub",
+  "version": "1.0.0",
+  "minAppVersion": "1.2.0",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "panel": { "title": "GitHub" },
+  "permissions": {
+    "http": ["https://github.com", "https://api.github.com"],
+    "open": [],
+    "secrets": true,
+    "workspace": true
+  }
+}

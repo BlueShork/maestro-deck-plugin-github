@@ -1,0 +1,24 @@
+:root {
+  --background: 48 30% 97%; --foreground: 240 9% 7%; --muted-foreground: 240 4% 40%;
+  --border: 40 9% 85%; --input: 40 9% 82%; --brand: 17 96% 52%; --brand-foreground: 0 0% 100%;
+  --destructive: 1 100% 44%; --accent: 45 18% 91%; --radius: 0.375rem;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+h1 { font-size: 15px; font-weight: 600; margin: 0; }
+.pad { padding: 16px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.muted { color: hsl(var(--muted-foreground)); }
+.small { font-size: 11px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: hsl(var(--muted-foreground)); }
+input, select, textarea { font: inherit; text-transform: none; letter-spacing: normal; color: hsl(var(--foreground)); background: hsl(var(--background)); border: 1px solid hsl(var(--input)); border-radius: var(--radius); padding: 6px 8px; }
+input:focus, select:focus, textarea:focus { outline: 1px solid hsl(var(--brand)); border-color: hsl(var(--brand)); }
+textarea { resize: vertical; }
+button { font: inherit; cursor: pointer; }
+.primary { background: hsl(var(--brand)); color: hsl(var(--brand-foreground)); border: 0; border-radius: var(--radius); padding: 8px 12px; font-weight: 600; }
+.primary:disabled { opacity: .5; cursor: default; }
+.link { align-self: flex-start; background: none; border: 0; padding: 0; color: hsl(var(--brand)); font-size: 12px; }
+.error { color: hsl(var(--destructive)); font-size: 12px; margin: 0; }
+.error ul { margin: 4px 0 0; padding-left: 16px; }
+.banner { margin: 0; padding: 8px; border: 1px solid hsl(var(--border)); background: hsl(var(--accent)); }
